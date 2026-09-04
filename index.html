@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>OILTRACE AI - Mission Control</title>
+    <meta name="description" content="AI-powered satellite intelligence for marine oil-spill detection, drift reconstruction and evidence-based vessel attribution." />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
+  </head>
+  <body class="bg-[#0e1320] text-[#dee2f4] antialiased selection:bg-[#00f2ff] selection:text-[#002022]">
+    <div id="root"></div>
+    <script>
+      if (window.location.protocol === 'file:') {
+        document.getElementById('root').innerHTML = `
+          <main style="min-height:100vh;display:grid;place-items:center;padding:24px;background:#0e1320;color:#dee2f4;font-family:system-ui,sans-serif;text-align:center">
+            <section style="max-width:560px;border:1px solid #334155;padding:32px;background:#151d2e">
+              <p style="color:#00f2ff;letter-spacing:.12em;font-size:12px">OILTRACE AI</p>
+              <h1 style="font-size:28px;margin:12px 0">Start the local mission server</h1>
+              <p style="color:#aab4c8;line-height:1.6">This app uses React modules and cannot run from a file opened directly. Open a terminal in this folder and run:</p>
+              <code style="display:block;margin:20px 0;padding:14px;background:#0a101c;color:#7ee7ed;text-align:left">npm install<br>npm run dev</code>
+              <p style="color:#aab4c8">Then open <strong style="color:#fff">http://localhost:3000</strong>.</p>
+            </section>
+          </main>`;
+      }
+    </script>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+

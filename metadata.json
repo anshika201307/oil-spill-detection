@@ -1,0 +1,6 @@
+{
+  "name": "OilTrace AI",
+  "description": "AI-powered satellite intelligence for marine oil-spill detection, drift reconstruction, and evidence-based vessel attribution.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
