@@ -109,6 +109,11 @@ export const InvestigationTheater: React.FC<InvestigationTheaterProps> = ({
     if (e) e.preventDefault();
     if (!quickQuery.trim()) return;
 
+    if (selectedIncident.detectionId) {
+      setQuickAnswer(`This is a preliminary ${selectedIncident.inferenceMode} detection. Drift uses ${selectedIncident.metoceanProvider}; vessel candidates use ${selectedIncident.aisProvider}. ${selectedIncident.attributionDisclaimer}`);
+      return;
+    }
+
     setIsQueryingAi(true);
     try {
       const res = await fetch('/api/copilot/query', {
@@ -132,6 +137,10 @@ export const InvestigationTheater: React.FC<InvestigationTheaterProps> = ({
   // Pre-fill quick query buttons
   const handleQuickQuestion = (q: string) => {
     setQuickQuery(q);
+    if (selectedIncident.detectionId) {
+      setQuickAnswer(`This is a preliminary ${selectedIncident.inferenceMode} detection. Drift uses ${selectedIncident.metoceanProvider}; vessel candidates use ${selectedIncident.aisProvider}. ${selectedIncident.attributionDisclaimer}`);
+      return;
+    }
     // Auto execute
     setIsQueryingAi(true);
     fetch('/api/copilot/query', {
@@ -159,11 +168,11 @@ export const InvestigationTheater: React.FC<InvestigationTheaterProps> = ({
         <div>
           <div className="flex items-center gap-2 flex-wrap mb-1.5">
             <span className="px-2.5 py-0.5 rounded bg-[#00f2ff]/10 text-[#00f2ff] border border-[#00f2ff]/30 text-xs font-mono-data font-bold">
-              SIH26143 ACTIVE INVESTIGATION THEATER
+              {selectedIncident.detectionId ? 'MODEL-ASSISTED INVESTIGATION' : 'DEMO INVESTIGATION THEATER'}
             </span>
             <span className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 text-xs font-mono-data font-bold flex items-center gap-1">
               <CheckCircle2 className="w-3 h-3" />
-              DEMO MODE ACTIVE
+              {selectedIncident.detectionId ? 'SAMPLE METOCEAN + AIS' : 'DEMO MODE ACTIVE'}
             </span>
             <span className="text-xs font-mono-data text-[#849495]">
               ID: {selectedIncident.id}
@@ -173,9 +182,14 @@ export const InvestigationTheater: React.FC<InvestigationTheaterProps> = ({
           <h1 className="text-2xl sm:text-3xl font-bold uppercase tracking-tight text-[#dee2f4] flex items-center gap-3">
             <span>{selectedIncident.name}</span>
             <span className="text-sm font-normal font-mono-data text-[#849495]">
-              ({selectedIncident.coordinates[0]}°N, {selectedIncident.coordinates[1]}°E)
+              ({Math.abs(selectedIncident.coordinates[0])}°{selectedIncident.coordinates[0] < 0 ? 'S' : 'N'}, {Math.abs(selectedIncident.coordinates[1])}°{selectedIncident.coordinates[1] < 0 ? 'W' : 'E'})
             </span>
           </h1>
+          {selectedIncident.detectionId && (
+            <p className="mt-2 max-w-3xl text-xs text-amber-300">
+              {selectedIncident.inferenceMode}; U-Net score is uncalibrated. Wind/current and AIS inputs are sample providers. Candidate scores are not evidence of responsibility.
+            </p>
+          )}
         </div>
 
         {/* Action Buttons: Run Full Investigation, Run Judge Demo, Generate Report */}
@@ -200,14 +214,14 @@ export const InvestigationTheater: React.FC<InvestigationTheaterProps> = ({
             <ChevronDown className="w-3.5 h-3.5 text-[#849495] absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
           </div>
 
-          {/* RUN JUDGE DEMO BUTTON (Primary Highlight) */}
-          <button
+          {/* Demo-only judge workflow is not presented as evidence for uploaded imagery. */}
+          {!selectedIncident.detectionId && <button
             onClick={() => setIsJudgeDemoOpen(true)}
             className="btn-primary px-4 py-2 rounded-lg text-xs font-mono-data font-bold flex items-center gap-2 shadow-[0_0_20px_rgba(0,242,255,0.3)] animate-pulse"
           >
             <Zap className="w-4 h-4" />
             <span>RUN FULL INVESTIGATION / JUDGE DEMO</span>
-          </button>
+          </button>}
 
           {/* GENERATE REPORT BUTTON */}
           <button
@@ -269,7 +283,7 @@ export const InvestigationTheater: React.FC<InvestigationTheaterProps> = ({
               <div className="text-right text-xs font-mono-data">
                 <div className="text-[#00f2ff] font-bold">
                   {timelineProgress === 0.0
-                    ? `T-10.4h RELEASE ORIGIN (${selectedIncident.hindcastOrigin.estimatedReleaseTimeUtc})`
+                    ? `T-${selectedIncident.hindcastOrigin.elapsedHours.toFixed(1)}h RELEASE ORIGIN (${selectedIncident.hindcastOrigin.estimatedReleaseTimeUtc})`
                     : timelineProgress === 1.0
                     ? `T-0 SATELLITE DETECTION (${selectedIncident.detectedAt})`
                     : `HINDCAST STEP: ${(timelineProgress * 100).toFixed(0)}% PROGRESS`}
@@ -295,8 +309,8 @@ export const InvestigationTheater: React.FC<InvestigationTheaterProps> = ({
                 className="w-full h-2 bg-[#0e1320] rounded-lg appearance-none cursor-pointer accent-[#00f2ff] border border-[#3a494b]"
               />
               <div className="flex items-center justify-between text-[10px] font-mono-data text-[#849495]">
-                <span>← T-10.4h Spill Origin ({selectedIncident.hindcastOrigin.lat}°N, {selectedIncident.hindcastOrigin.lon}°E)</span>
-                <span>T-0 Sentinel-1A Acquisition ({selectedIncident.coordinates[0]}°N, {selectedIncident.coordinates[1]}°E) →</span>
+                <span>← T-{selectedIncident.hindcastOrigin.elapsedHours.toFixed(1)}h Spill Origin ({selectedIncident.hindcastOrigin.lat}°, {selectedIncident.hindcastOrigin.lon}°)</span>
+                <span>T-0 {selectedIncident.satelliteSource} ({selectedIncident.coordinates[0]}°, {selectedIncident.coordinates[1]}°) →</span>
               </div>
             </div>
           </div>
@@ -308,17 +322,19 @@ export const InvestigationTheater: React.FC<InvestigationTheaterProps> = ({
                 <Sparkles className="w-4 h-4 text-[#00f2ff]" />
                 <span>AI MARITIME FORENSIC COPILOT</span>
               </div>
-              <span className="text-[10px] font-mono-data text-[#849495]">Gemini / Heuristic Grounded</span>
+              <span className="text-[10px] font-mono-data text-[#849495]">{selectedIncident.detectionId ? 'Sample-provider analysis' : 'Gemini / Heuristic Grounded'}</span>
             </div>
 
             {/* Quick Prompt Chips */}
             <div className="flex flex-wrap gap-2">
-              {[
-                'Why is MT Stena Nautica ranked #1?',
-                'Explain drift hindcast calculation',
-                'What are the key uncertainties in this case?',
-                'Are biogenic algae slicks ruled out?',
-              ].map((q) => (
+              {(selectedIncident.detectionId
+                ? ['How was this synthetic track score calculated?', 'Which sample wind/current values were used?', 'What remains unmeasured in this detection?']
+                : [
+                    'Why is MT Stena Nautica ranked #1?',
+                    'Explain drift hindcast calculation',
+                    'What are the key uncertainties in this case?',
+                    'Are biogenic algae slicks ruled out?',
+                  ]).map((q) => (
                 <button
                   key={q}
                   onClick={() => handleQuickQuestion(q)}
@@ -456,7 +472,7 @@ export const InvestigationTheater: React.FC<InvestigationTheaterProps> = ({
             {/* Disclaimer */}
             <div className="p-2.5 rounded-lg bg-[#0e1320] border border-[#3a494b] text-[10px] font-mono-data text-[#849495] flex items-center gap-2">
               <AlertCircle className="w-3.5 h-3.5 text-[#f59e0b] shrink-0" />
-              <span>Correlation score represents investigative relevance, not proof of responsibility.</span>
+                <span>{selectedIncident.attributionDisclaimer || 'Correlation score represents investigative relevance, not proof of responsibility.'}</span>
             </div>
 
           </div>
@@ -543,13 +559,15 @@ export const InvestigationTheater: React.FC<InvestigationTheaterProps> = ({
               </div>
 
               {/* Dossier Action Button */}
-              <button
-                onClick={() => onGenerateDossier(selectedIncident, selectedVessel)}
-                className="w-full btn-primary p-2.5 rounded-lg text-xs font-mono-data font-bold flex items-center justify-center gap-2"
-              >
-                <FileText className="w-4 h-4" />
-                <span>EXPORT ADMIRALTY BRIEF FOR {selectedVessel.name.toUpperCase()}</span>
-              </button>
+              {!selectedIncident.detectionId && (
+                <button
+                  onClick={() => onGenerateDossier(selectedIncident, selectedVessel)}
+                  className="w-full btn-primary p-2.5 rounded-lg text-xs font-mono-data font-bold flex items-center justify-center gap-2"
+                >
+                  <FileText className="w-4 h-4" />
+                  <span>EXPORT ADMIRALTY BRIEF FOR {selectedVessel.name.toUpperCase()}</span>
+                </button>
+              )}
             </div>
           )}
 

@@ -38,12 +38,28 @@ export const SimulationStudio: React.FC<SimulationStudioProps> = ({
   const [selectedPreset, setSelectedPreset] = useState<'NORTH_SEA' | 'MALACCA' | 'HORMUZ' | 'GOM' | 'CUSTOM'>('NORTH_SEA');
   
   // Custom scenario form state
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<{
+    name: string;
+    locationName: string;
+    lat: number;
+    lon: number;
+    slickType: SpillIncident['slickType'];
+    volumeBbl: number;
+    areaKm2: number;
+    windSpeedKts: number;
+    windDirDeg: number;
+    currentSpeedMs: number;
+    currentDirDeg: number;
+    elapsedHours: number;
+    vesselName: string;
+    vesselMmsi: string;
+    vesselFlag: string;
+  }>({
     name: 'North Sea Bravo Sector Slick #9042',
     locationName: 'North Sea EEZ (56.41° N, 3.22° E)',
     lat: 56.418,
     lon: 3.224,
-    slickType: 'Crude Oil (API 32°)' as const,
+    slickType: 'Crude Oil (API 32°)',
     volumeBbl: 3820,
     areaKm2: 44.8,
     windSpeedKts: 21.4,

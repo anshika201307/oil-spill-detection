@@ -270,7 +270,7 @@ export const IntelligenceBentoGrid: React.FC<IntelligenceBentoGridProps> = ({
                       </td>
                       <td className="py-3.5">
                         <div className="font-semibold">{inc.areaKm2} km²</div>
-                        <div className="text-[10px] text-[#94a3b8]">{inc.estimatedVolumeBbl.toLocaleString()} bbl</div>
+                        <div className="text-[10px] text-[#94a3b8]">{inc.volumeEstimateAvailable === false ? 'Volume not estimated' : `${inc.estimatedVolumeBbl.toLocaleString()} bbl`}</div>
                       </td>
                       <td className="py-3.5 text-xs text-[#cbd5e1]">
                         {inc.satelliteSource.split(' ')[0]}

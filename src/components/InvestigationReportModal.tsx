@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { 
   X, 
   Download, 
@@ -32,15 +32,30 @@ export const InvestigationReportModal: React.FC<InvestigationReportModalProps> =
   selectedVessel,
 }) => {
   const [copiedHash, setCopiedHash] = useState(false);
+  const [reportId] = useState(() => `OILTRACE-${incident.id}-${Date.now().toString().slice(-6)}`);
+  const [timestampUtc] = useState(() => new Date().toISOString());
+  const [evidenceHash, setEvidenceHash] = useState('Calculating SHA-256');
   const targetVessel = selectedVessel || incident.correlatedVessels[0];
+  const isModelDetection = Boolean(incident.detectionId);
+
+  useEffect(() => {
+    let isCurrent = true;
+    const snapshot = JSON.stringify({ incident, targetVessel });
+    crypto.subtle.digest('SHA-256', new TextEncoder().encode(snapshot))
+      .then((digest) => {
+        const hash = Array.from(new Uint8Array(digest), (value) => value.toString(16).padStart(2, '0')).join('');
+        if (isCurrent) setEvidenceHash(`SHA256:${hash}`);
+      })
+      .catch(() => {
+        if (isCurrent) setEvidenceHash('SHA-256 unavailable');
+      });
+    return () => { isCurrent = false; };
+  }, [incident, targetVessel]);
 
   if (!isOpen) return null;
 
-  const reportId = `MARPOL-INV-${incident.id}-${Date.now().toString().slice(-6)}`;
-  const timestampUtc = new Date().toISOString();
-  const evidenceHash = `SHA256:7f8a9e4b3c2d1e0f9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b9c8d7e6f`;
-
   const handleCopyHash = () => {
+    if (!evidenceHash.startsWith('SHA256:')) return;
     navigator.clipboard.writeText(evidenceHash);
     setCopiedHash(true);
     setTimeout(() => setCopiedHash(false), 2000);
@@ -58,16 +73,28 @@ export const InvestigationReportModal: React.FC<InvestigationReportModalProps> =
         coordinates: incident.coordinates,
         slickType: incident.slickType,
         areaKm2: incident.areaKm2,
-        estimatedVolumeBbl: incident.estimatedVolumeBbl,
+        estimatedVolumeBbl: incident.volumeEstimateAvailable === false ? null : incident.estimatedVolumeBbl,
         thicknessMicrons: incident.thicknessMicrons,
         satelliteSource: incident.satelliteSource,
         radarBackscatterDb: incident.radarBackscatterDb,
+      },
+      detection: {
+        detectionId: incident.detectionId,
+        maskAreaRatio: incident.maskAreaRatio,
+        geometry: incident.maskGeometry,
+        imageFootprint: incident.imageFootprint,
+        groundSampleDistanceM: incident.groundSampleDistanceM,
+        inferenceMode: incident.inferenceMode,
       },
       environmentalConditions: incident.metocean,
       hydrodynamicHindcast: incident.hindcastOrigin,
       topCorrelatedVessel: targetVessel,
       allCorrelatedVessels: incident.correlatedVessels,
-      disclaimer: 'Correlation score represents investigative relevance, not proof of responsibility.',
+      dataSources: {
+        metocean: incident.metoceanProvider || incident.metocean.source || 'Scenario demonstration data',
+        ais: incident.aisProvider || 'Scenario demonstration data',
+      },
+      disclaimer: incident.attributionDisclaimer || 'Correlation score represents investigative relevance, not proof of responsibility. Scenario values are demonstration data.',
     };
 
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -111,7 +138,7 @@ export const InvestigationReportModal: React.FC<InvestigationReportModalProps> =
             </span>
             <div>
               <h2 className="text-lg font-bold uppercase tracking-tight text-[#dee2f4]">
-                Official Maritime Incident Investigation Report
+                OilTrace Investigation Report
               </h2>
               <p className="text-xs font-mono-data text-[#849495]">Report Ref: {reportId}</p>
             </div>
@@ -159,14 +186,14 @@ export const InvestigationReportModal: React.FC<InvestigationReportModalProps> =
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <div>
                 <span className="text-[10px] font-mono-data text-[#00f2ff] font-bold uppercase tracking-wider">
-                  MARITIME ADMIRALTY INCIDENT DOSSIER
+                  {isModelDetection ? 'PRELIMINARY MODEL INVESTIGATION' : 'DEMONSTRATION SCENARIO REPORT'}
                 </span>
                 <h3 className="text-base font-bold text-white mt-0.5">
                   Case File: {incident.name}
                 </h3>
               </div>
-              <div className="px-3 py-1 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 text-xs font-mono-data font-bold">
-                EVIDENTIARY STATUS: TIER-1 VERIFIED
+              <div className="px-3 py-1 rounded bg-amber-500/10 text-amber-300 border border-amber-500/30 text-xs font-mono-data font-bold">
+                {isModelDetection ? 'PRELIMINARY MODEL OUTPUT' : 'DEMONSTRATION DATA'}
               </div>
             </div>
 
@@ -177,7 +204,7 @@ export const InvestigationReportModal: React.FC<InvestigationReportModalProps> =
               </div>
               <div>
                 <span className="text-[#849495]">Sector Location:</span>
-                <div className="text-[#dee2f4] font-bold">{incident.coordinates[0]}°N, {incident.coordinates[1]}°E</div>
+                <div className="text-[#dee2f4] font-bold">{Math.abs(incident.coordinates[0])}°{incident.coordinates[0] < 0 ? 'S' : 'N'}, {Math.abs(incident.coordinates[1])}°{incident.coordinates[1] < 0 ? 'W' : 'E'}</div>
               </div>
               <div>
                 <span className="text-[#849495]">Detection Timestamp:</span>
@@ -193,11 +220,12 @@ export const InvestigationReportModal: React.FC<InvestigationReportModalProps> =
             <div className="flex items-center justify-between p-2.5 rounded bg-[#141c2c] border border-[#3a494b] text-[11px] font-mono-data">
               <div className="flex items-center gap-2 truncate pr-2">
                 <Lock className="w-3.5 h-3.5 text-[#00f2ff] shrink-0" />
-                <span className="text-[#849495]">Chain-of-Custody Hash:</span>
+                <span className="text-[#849495]">Incident Snapshot SHA-256:</span>
                 <span className="text-[#b9cacb] truncate">{evidenceHash}</span>
               </div>
               <button
                 onClick={handleCopyHash}
+                disabled={!evidenceHash.startsWith('SHA256:')}
                 className="text-[#00f2ff] hover:underline shrink-0 flex items-center gap-1"
               >
                 {copiedHash ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
@@ -213,8 +241,16 @@ export const InvestigationReportModal: React.FC<InvestigationReportModalProps> =
               1. Satellite Remote Sensing & Slick Characterisation
             </h4>
             <p className="text-xs text-[#b9cacb] leading-relaxed">
-              Synthetic Aperture Radar (SAR) inversion detected a confirmed petroleum slick covering <b>{incident.areaKm2} km²</b> with an estimated volume of <b>~{incident.estimatedVolumeBbl} barrels</b>. Polarimetric backscatter damping of <b>{incident.radarBackscatterDb} dB</b> against sea surface capillary Bragg waves confirms mineral crude oil. Biogenic algae false-positive probability was evaluated and ruled out at <b>{incident.biogenicConfidence}%</b>.
+              {isModelDetection
+                ? <>The U-Net predicted mask coverage of <b>{((incident.maskAreaRatio || 0) * 100).toFixed(2)}%</b>{incident.groundSampleDistanceM ? <>; georeferenced area is <b>{incident.areaKm2} km²</b> at {incident.groundSampleDistanceM} m/pixel</> : null}. Model score: <b>{incident.confidence}%</b> (uncalibrated). This image-only model does not determine oil type, volume, backscatter damping, or biogenic look-alike probability.</>
+                : <>Preset values show a scenario area of <b>{incident.areaKm2} km²</b> and volume of <b>~{incident.estimatedVolumeBbl} barrels</b>. These are demonstration values, not a new model measurement.</>}
             </p>
+            {isModelDetection && incident.maskGeometry && (
+              <details className="text-xs text-[#b9cacb]">
+                <summary className="cursor-pointer text-[#00f2ff]">Predicted mask GeoJSON</summary>
+                <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap">{JSON.stringify(incident.maskGeometry, null, 2)}</pre>
+              </details>
+            )}
           </div>
 
           {/* Section 3: Metocean & Hydrodynamic Backward Drift Reconstruction */}
@@ -234,7 +270,7 @@ export const InvestigationReportModal: React.FC<InvestigationReportModalProps> =
               </div>
               <div className="p-2.5 rounded bg-[#141c2c] border border-[#3a494b]">
                 <span className="text-[#849495]">Estimated Origin Point:</span>
-                <div className="text-[#f59e0b] font-bold">{incident.hindcastOrigin.lat}°N, {incident.hindcastOrigin.lon}°E</div>
+                <div className="text-[#f59e0b] font-bold">{Math.abs(incident.hindcastOrigin.lat)}°{incident.hindcastOrigin.lat < 0 ? 'S' : 'N'}, {Math.abs(incident.hindcastOrigin.lon)}°{incident.hindcastOrigin.lon < 0 ? 'W' : 'E'}</div>
               </div>
               <div className="p-2.5 rounded bg-[#141c2c] border border-[#3a494b]">
                 <span className="text-[#849495]">Release Timestamp:</span>
@@ -242,7 +278,8 @@ export const InvestigationReportModal: React.FC<InvestigationReportModalProps> =
               </div>
             </div>
             <p className="text-xs text-[#849495] pt-1">
-              Deterministic Lagrangian reverse particle tracking estimates a total drift distance of <b>{incident.hindcastOrigin.driftDistanceNm} NM</b> over <b>{incident.hindcastOrigin.elapsedHours} hours</b> prior to satellite overpass with an uncertainty corridor of <b>±2.6 km</b>.
+              {incident.metoceanProvider && <><b>Provider:</b> {incident.metoceanProvider}. </>}
+              Deterministic Lagrangian reverse particle tracking estimates a total drift distance of <b>{incident.hindcastOrigin.driftDistanceNm} NM</b> over <b>{incident.hindcastOrigin.elapsedHours} hours</b> with an uncertainty corridor of <b>±{incident.hindcastOrigin.uncertaintyRadiusKm || 0} km</b>. {incident.metoceanProvider ? 'Sample inputs; replace with verified environmental observations before operational use.' : ''}
             </p>
           </div>
 
@@ -263,7 +300,7 @@ export const InvestigationReportModal: React.FC<InvestigationReportModalProps> =
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                   <div>
                     <span className="text-[10px] font-mono-data text-[#ef4444] font-bold uppercase">
-                      TOP CORRELATED CANDIDATE (RANK 1)
+                      {incident.aisProvider ? 'SAMPLE TOP-RANKED CANDIDATE' : 'TOP CORRELATED CANDIDATE (RANK 1)'}
                     </span>
                     <h5 className="text-base font-bold text-white">
                       {targetVessel.name} (MMSI: {targetVessel.mmsi} | IMO: {targetVessel.imo})
@@ -310,16 +347,18 @@ export const InvestigationReportModal: React.FC<InvestigationReportModalProps> =
               4. Admiralty Conclusion & Operational Next Actions
             </h4>
             <p className="text-xs text-[#b9cacb] leading-relaxed">
-              The empirical confluence of Sentinel-1A SAR polarimetric signatures, hydrodynamic Lagrangian hindcast trajectory, and AIS position telemetry establishes high investigative relevance indicating that <b>{targetVessel.name}</b> warrants priority maritime inquiry under MARPOL Annex I regulations.
+              {incident.aisProvider
+                ? <>This development workflow combines a preliminary image-model output with sample metocean inputs and synthetic AIS tracks. <b>{targetVessel.name}</b> is a synthetic ranked candidate only; this output does not establish vessel presence, causation, or responsibility.</>
+                : <>This demonstration combines preset SAR, drift, and vessel values. Correlation is investigative relevance only and does not establish responsibility.</>}
             </p>
 
             <div className="space-y-1.5 pt-2">
               <div className="text-[11px] font-mono-data font-bold text-[#dee2f4]">RECOMMENDED ACTION ITEMS:</div>
               <ul className="text-xs text-[#b9cacb] space-y-1 pl-4 list-disc">
-                <li>Transmit evidentiary dossier to International Maritime Organization (IMO) Port State Control.</li>
-                <li>Notify Flag State administration ({targetVessel.flag}) for immediate logbook and oil record book inspection.</li>
-                <li>Deploy Tier-2 mechanical containment skimmer booms along primary drift corridor bearing 135° SE.</li>
-                <li>Archive cryptographic chain-of-custody hash ({evidenceHash.slice(0, 24)}...) to immutable registry.</li>
+                <li>Verify image calibration, georeferencing, and predicted mask against expert-reviewed SAR labels.</li>
+                <li>Replace sample wind/current inputs with quality-controlled environmental observations.</li>
+                <li>Replace synthetic AIS tracks with licensed, timestamped vessel observations before ranking.</li>
+                <li>Retain the incident snapshot SHA-256 ({evidenceHash.slice(0, 24)}...) with this local report export.</li>
               </ul>
             </div>
           </div>
@@ -328,7 +367,7 @@ export const InvestigationReportModal: React.FC<InvestigationReportModalProps> =
           <div className="p-3.5 rounded-lg bg-[#141c2c] border border-[#f59e0b]/40 text-xs font-mono-data text-[#b9cacb] flex items-center gap-2.5">
             <AlertCircle className="w-5 h-5 text-[#f59e0b] shrink-0" />
             <span>
-              <b>LEGAL DISCLAIMER:</b> Correlation score represents investigative relevance, not proof of responsibility. Final attribution is subject to official maritime administrative hearing and onboard Oil Record Book verification.
+              <b>LIMITATIONS:</b> Model score is uncalibrated. Metocean and AIS providers are sample data for this workflow; candidate scores indicate investigative relevance only, not proof of responsibility. This SHA-256 is a local snapshot checksum, not an immutable chain-of-custody record.
             </span>
           </div>
 

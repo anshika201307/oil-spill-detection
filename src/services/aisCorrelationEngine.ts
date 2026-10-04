@@ -166,7 +166,7 @@ export function correlateVesselToDrift(
   }
 
   if (vessel.vesselType.includes('Tanker')) {
-    bullets.push(`Vessel classification (${vessel.vesselType}) matches detected petroleum cargo profile.`);
+    bullets.push(`Vessel class recorded as ${vessel.vesselType}; class alone is not evidence of a discharge.`);
   }
 
   return {

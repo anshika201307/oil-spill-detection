@@ -190,22 +190,33 @@ export const InvestigationMap: React.FC<InvestigationMapProps> = ({
 
     // 1. SATELLITE FOOTPRINT LAYER
     if (layers.satelliteFootprint) {
-      const swathBounds: L.LatLngBoundsExpression = [
-        [detectedLat - 0.22, detectedLon - 0.35],
-        [detectedLat + 0.22, detectedLon + 0.35],
-      ];
-      const satRect = L.rectangle(swathBounds, {
-        color: '#00f2ff',
-        weight: 1,
-        dashArray: '4, 6',
-        fillColor: '#00f2ff',
-        fillOpacity: 0.04,
-      });
-      satRect.bindTooltip(`<b>SAR Swath Frame:</b> ${incident.satelliteSource}<br/>Polarization: ${incident.sarPolarization}`, {
-        className: 'custom-leaflet-tooltip',
-        sticky: true,
-      });
-      groups.satelliteFootprint.addLayer(satRect);
+      if (incident.imageFootprint) {
+        const footprint = L.geoJSON(incident.imageFootprint, {
+          style: { color: '#00f2ff', weight: 1, dashArray: '4, 6', fillColor: '#00f2ff', fillOpacity: 0.04 },
+        });
+        footprint.bindTooltip(`<b>Georeferenced image footprint:</b> ${incident.satelliteSource}<br/>GSD: ${incident.groundSampleDistanceM} m/pixel`, {
+          className: 'custom-leaflet-tooltip',
+          sticky: true,
+        });
+        groups.satelliteFootprint.addLayer(footprint);
+      } else {
+        const swathBounds: L.LatLngBoundsExpression = [
+          [detectedLat - 0.22, detectedLon - 0.35],
+          [detectedLat + 0.22, detectedLon + 0.35],
+        ];
+        const satRect = L.rectangle(swathBounds, {
+          color: '#00f2ff',
+          weight: 1,
+          dashArray: '4, 6',
+          fillColor: '#00f2ff',
+          fillOpacity: 0.04,
+        });
+        satRect.bindTooltip(`<b>Demo SAR swath:</b> ${incident.satelliteSource}<br/>Polarization: ${incident.sarPolarization}`, {
+          className: 'custom-leaflet-tooltip',
+          sticky: true,
+        });
+        groups.satelliteFootprint.addLayer(satRect);
+      }
     }
 
     // 2. OIL SLICK DETECTION LAYER (Polygon + Centroid)
@@ -215,25 +226,33 @@ export const InvestigationMap: React.FC<InvestigationMapProps> = ({
       const curSlickLon = originLon + (detectedLon - originLon) * timelineProgress;
       const slickRadiusMeters = (Math.sqrt(incident.areaKm2) * 500) * (0.4 + 0.6 * timelineProgress);
 
-      // Slick polygon simulation
-      const slickCircle = L.circle([curSlickLat, curSlickLon], {
-        radius: slickRadiusMeters,
-        color: '#ef4444',
-        weight: 2,
-        fillColor: '#1e293b',
-        fillOpacity: 0.75,
-      });
-
-      slickCircle.bindPopup(`
+      const spillPopup = `
         <div style="font-family: sans-serif; color: #1e293b; padding: 4px;">
           <h4 style="margin: 0 0 4px 0; color: #ef4444; font-weight: bold;">${incident.name}</h4>
           <p style="margin: 2px 0; font-size: 12px;"><b>Area:</b> ${incident.areaKm2} km²</p>
-          <p style="margin: 2px 0; font-size: 12px;"><b>Volume:</b> ~${incident.estimatedVolumeBbl} bbl</p>
+          <p style="margin: 2px 0; font-size: 12px;"><b>Volume:</b> ${incident.volumeEstimateAvailable === false ? 'not estimated' : `~${incident.estimatedVolumeBbl} bbl`}</p>
           <p style="margin: 2px 0; font-size: 12px;"><b>Type:</b> ${incident.slickType}</p>
-          <p style="margin: 2px 0; font-size: 12px;"><b>Radar Damping:</b> ${incident.radarBackscatterDb} dB</p>
+          <p style="margin: 2px 0; font-size: 12px;"><b>Mode:</b> ${incident.inferenceMode || 'demo'}</p>
         </div>
-      `);
-      groups.oilSlick.addLayer(slickCircle);
+      `;
+
+      if (incident.maskGeometry) {
+        const maskLayer = L.geoJSON(incident.maskGeometry, {
+          style: { color: '#ef4444', weight: 2, fillColor: '#ef4444', fillOpacity: 0.5 },
+        });
+        maskLayer.bindPopup(spillPopup);
+        groups.oilSlick.addLayer(maskLayer);
+      } else {
+        const slickCircle = L.circle([curSlickLat, curSlickLon], {
+          radius: slickRadiusMeters,
+          color: '#ef4444',
+          weight: 2,
+          fillColor: '#1e293b',
+          fillOpacity: 0.75,
+        });
+        slickCircle.bindPopup(spillPopup);
+        groups.oilSlick.addLayer(slickCircle);
+      }
 
       // Centroid marker at detection
       const slickMarker = L.marker([detectedLat, detectedLon], {
@@ -255,7 +274,7 @@ export const InvestigationMap: React.FC<InvestigationMapProps> = ({
         fillColor: '#f59e0b',
         fillOpacity: 0.12,
       });
-      originEllipse.bindTooltip(`<b>Estimated Release Origin:</b><br/>${originLat.toFixed(4)}°N, ${originLon.toFixed(4)}°E<br/>Time: ${incident.hindcastOrigin.estimatedReleaseTimeUtc}<br/>Uncertainty: ±${uncertaintyKm} km`, {
+      originEllipse.bindTooltip(`<b>Estimated Release Origin:</b><br/>${Math.abs(originLat).toFixed(4)}°${originLat < 0 ? 'S' : 'N'}, ${Math.abs(originLon).toFixed(4)}°${originLon < 0 ? 'W' : 'E'}<br/>Time: ${incident.hindcastOrigin.estimatedReleaseTimeUtc}<br/>Uncertainty: ±${uncertaintyKm} km`, {
         className: 'custom-leaflet-tooltip',
       });
       groups.spillOrigin.addLayer(originEllipse);
@@ -274,7 +293,7 @@ export const InvestigationMap: React.FC<InvestigationMapProps> = ({
         { lat: originLat, lon: originLon, timeUtc: incident.hindcastOrigin.estimatedReleaseTimeUtc },
       ];
 
-      const latlngs: [number, number][] = waypoints.map((wp) => [wp.lat, wp.lon]);
+      const latlngs: [number, number][] = waypoints.map((wp) => [Number(wp.lat), Number(wp.lon)] as [number, number]);
 
       const driftLine = L.polyline(latlngs, {
         color: '#00f2ff',
@@ -549,7 +568,7 @@ export const InvestigationMap: React.FC<InvestigationMapProps> = ({
         </div>
         <div className="flex items-center gap-1.5">
           <span className="w-2.5 h-2.5 rounded-full bg-[#00f2ff]" />
-          <span className="text-[#b9cacb]">Top Suspect Vessel</span>
+          <span className="text-[#b9cacb]">{incident.aisProvider ? 'Top Sample-Ranked Vessel' : 'Top Correlated Vessel'}</span>
         </div>
       </div>
 

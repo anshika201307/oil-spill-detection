@@ -6,3 +6,6 @@ coverage/
 *.log
 .env*
 !.env.example
+ai-service/.venv/
+ai-service/data/
+ai-service/model/

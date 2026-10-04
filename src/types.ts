@@ -23,6 +23,16 @@ export interface MetoceanData {
   source?: string;
 }
 
+export type GeoJsonPolygonGeometry = {
+  type: 'Polygon';
+  coordinates: number[][][];
+};
+
+export type GeoJsonMultiPolygonGeometry = {
+  type: 'MultiPolygon';
+  coordinates: number[][][][];
+};
+
 export interface DriftWaypoint {
   lat: number;
   lon: number;
@@ -74,6 +84,15 @@ export interface CvDetectionMetrics {
   preprocessedImageUrl: string;
   segmentationMaskUrl: string;
   overlayImageUrl: string;
+}
+
+export interface OilTraceAnalysisResult {
+  detection: CvDetectionMetrics & { inferenceMode?: string; spillPolygon?: [number, number][] };
+  drift: { originLat: number; originLon: number; confidence: number; uncertaintyRadiusKm: number; forwardWaypoints: [number, number][] };
+  candidates: { vesselId: string; name: string; distanceNm: number; attributionScore: number; factors: string[] }[];
+  risk: { score: number; severity: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'; reasons: string[] };
+  report: string;
+  pipeline: string[];
 }
 
 export interface AisScoreBreakdown {
@@ -136,8 +155,8 @@ export interface SpillIncident {
   coordinates: [number, number]; // [lat, lon]
   detectedAt: string;
   satelliteSource: string;
-  sarPolarization: 'VV + VH' | 'HH + HV' | 'Quad-Pol' | 'Dual-Pol VV';
-  slickType: 'Heavy Fuel Oil (HFO)' | 'Crude Oil (API 32°)' | 'Bilge Slop / Oily Water' | 'Refined Marine Gas Oil';
+  sarPolarization: 'VV + VH' | 'HH + HV' | 'Quad-Pol' | 'Dual-Pol VV' | 'Unspecified';
+  slickType: 'Heavy Fuel Oil (HFO)' | 'Crude Oil (API 32°)' | 'Bilge Slop / Oily Water' | 'Refined Marine Gas Oil' | 'Condensate Light Oil' | 'Unclassified';
   areaKm2: number;
   estimatedVolumeBbl: number;
   thicknessMicrons: number;
@@ -161,6 +180,16 @@ export interface SpillIncident {
   sarImageUrl?: string;
   cvAnalysis?: CvDetectionMetrics;
   driftResult?: DriftSimulationResult;
+  detectionId?: string;
+  volumeEstimateAvailable?: boolean;
+  maskAreaRatio?: number;
+  maskGeometry?: GeoJsonMultiPolygonGeometry;
+  imageFootprint?: GeoJsonPolygonGeometry;
+  groundSampleDistanceM?: number;
+  inferenceMode?: string;
+  metoceanProvider?: string;
+  aisProvider?: string;
+  attributionDisclaimer?: string;
 }
 
 export interface SatelliteMission {

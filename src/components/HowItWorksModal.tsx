@@ -19,13 +19,17 @@ import {
 interface HowItWorksModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onStartInvestigation: () => void;
+  isPlainEnglish?: boolean;
+  onStartInvestigation?: () => void;
+  onOpenDemo?: () => void;
 }
 
 export const HowItWorksModal: React.FC<HowItWorksModalProps> = ({
   isOpen,
   onClose,
+  isPlainEnglish = false,
   onStartInvestigation,
+  onOpenDemo,
 }) => {
   if (!isOpen) return null;
 
@@ -178,7 +182,13 @@ export const HowItWorksModal: React.FC<HowItWorksModalProps> = ({
           <button
             onClick={() => {
               onClose();
-              onStartInvestigation();
+              if (onOpenDemo) {
+                onOpenDemo();
+                return;
+              }
+              if (onStartInvestigation) {
+                onStartInvestigation();
+              }
             }}
             className="btn-primary w-full sm:w-auto px-6 py-3 rounded-xl font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer shadow-lg"
           >
