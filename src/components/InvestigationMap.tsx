@@ -122,7 +122,6 @@ interface InvestigationMapProps {
   selectedVessel: CorrelatedVessel | null;
   onSelectVessel: (vessel: CorrelatedVessel) => void;
   timelineProgress: number; // 0.0 (origin) to 1.0 (detection)
-  isPlainEnglish?: boolean;
 }
 
 export const InvestigationMap: React.FC<InvestigationMapProps> = ({
@@ -130,7 +129,6 @@ export const InvestigationMap: React.FC<InvestigationMapProps> = ({
   selectedVessel,
   onSelectVessel,
   timelineProgress,
-  isPlainEnglish = false,
 }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
@@ -179,10 +177,10 @@ export const InvestigationMap: React.FC<InvestigationMapProps> = ({
       attributionControl: false,
     });
 
-    // Dark Matter CartoDB Basemap for high-tech mission control aesthetic
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    // OpenStreetMap standard tiles with visible attribution
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
-      subdomains: 'abcd',
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
     }).addTo(map);
 
     // Zoom control in bottom right
@@ -537,7 +535,7 @@ export const InvestigationMap: React.FC<InvestigationMapProps> = ({
         <div className="absolute top-12 right-3 z-[400] w-64 bg-[#0e1320]/95 backdrop-blur-xl border border-[#3a494b] rounded-xl p-3 shadow-2xl text-xs font-mono-data space-y-2">
           <div className="flex items-center justify-between pb-2 border-b border-[#3a494b]">
             <span className="text-[#00f2ff] font-bold uppercase">Geospatial Layers</span>
-            <span className="text-[10px] text-[#849495]">CartoDB Dark</span>
+            <span className="text-[10px] text-[#849495]">OpenStreetMap</span>
           </div>
 
           <div className="space-y-1 max-h-72 overflow-y-auto pr-1">
