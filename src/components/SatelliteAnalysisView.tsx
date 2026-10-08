@@ -17,8 +17,22 @@ import {
   Droplet,
   Compass
 } from 'lucide-react';
-import { PRELOADED_SAR_SCENES, SarTestScene, cvService } from '../services/satelliteCvService';
+import { PRELOADED_SAR_SCENES, SarTestScene } from '../services/satelliteCvService';
 import { CvDetectionMetrics, SpillIncident } from '../types';
+
+type ViewerTab = 'ORIGINAL' | 'PREPROCESSED' | 'MASK' | 'OVERLAY';
+type AnalysisStatus = 'initial' | 'ready' | 'processing' | 'success' | 'error';
+
+const SUPPORTED_SAR_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'tif', 'tiff']);
+const SUPPORTED_SAR_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/tiff']);
+
+const formatFileSize = (bytes: number) => {
+  if (bytes < 1024 * 1024) {
+    return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  }
+
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+};
 
 interface SatelliteAnalysisViewProps {
   onTransferToInvestigation: (customIncident: Partial<SpillIncident>) => void;
@@ -30,12 +44,13 @@ export const SatelliteAnalysisView: React.FC<SatelliteAnalysisViewProps> = ({
   isPlainEnglish = false,
 }) => {
   const [selectedScene, setSelectedScene] = useState<SarTestScene>(PRELOADED_SAR_SCENES[0]);
-  const [activeViewerTab, setActiveViewerTab] = useState<'ORIGINAL' | 'PREPROCESSED' | 'MASK' | 'OVERLAY'>('OVERLAY');
+  const [activeViewerTab, setActiveViewerTab] = useState<ViewerTab>('OVERLAY');
   const [isProcessing, setIsProcessing] = useState(false);
   const [customFile, setCustomFile] = useState<File | null>(null);
   const [customFilePreview, setCustomFilePreview] = useState<string | null>(null);
-  const [analysisStatus, setAnalysisStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [analysisStatus, setAnalysisStatus] = useState<AnalysisStatus>('initial');
   const [analysisMessage, setAnalysisMessage] = useState<string | null>(null);
+  const [previewError, setPreviewError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [cvResult, setCvResult] = useState<CvDetectionMetrics>({
@@ -65,8 +80,9 @@ export const SatelliteAnalysisView: React.FC<SatelliteAnalysisViewProps> = ({
     setSelectedScene(scene);
     setCustomFile(null);
     setCustomFilePreview(null);
-    setAnalysisStatus('idle');
+    setAnalysisStatus('initial');
     setAnalysisMessage(null);
+    setPreviewError(null);
     setCvResult({
       spillDetected: true,
       confidence: scene.expectedConfidence,
@@ -107,8 +123,9 @@ export const SatelliteAnalysisView: React.FC<SatelliteAnalysisViewProps> = ({
   const clearCustomFile = () => {
     setCustomFile(null);
     setCustomFilePreview(null);
-    setAnalysisStatus('idle');
+    setAnalysisStatus('initial');
     setAnalysisMessage(null);
+    setPreviewError(null);
 
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
@@ -119,8 +136,9 @@ export const SatelliteAnalysisView: React.FC<SatelliteAnalysisViewProps> = ({
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const extension = file.name.split('.').pop()?.toLowerCase();
-    const supportedFile = file.type.startsWith('image/') || extension === 'tif' || extension === 'tiff';
+    const extension = file.name.split('.').pop()?.toLowerCase() ?? '';
+    const supportedFile = SUPPORTED_SAR_EXTENSIONS.has(extension)
+      && (file.type === '' || SUPPORTED_SAR_MIME_TYPES.has(file.type));
 
     if (!supportedFile) {
       clearCustomFile();
@@ -129,28 +147,33 @@ export const SatelliteAnalysisView: React.FC<SatelliteAnalysisViewProps> = ({
       return;
     }
 
+    if (file.size === 0) {
+      clearCustomFile();
+      setAnalysisStatus('error');
+      setAnalysisMessage('The selected file is empty. Choose a PNG, JPG, or GeoTIFF image with image data.');
+      return;
+    }
+
     setCustomFile(file);
     setCustomFilePreview(URL.createObjectURL(file));
     setActiveViewerTab('ORIGINAL');
-    setAnalysisStatus('idle');
-    setAnalysisMessage(null);
+    setAnalysisStatus('ready');
+    setAnalysisMessage('Original image preview is ready. Backend analysis is required for detection results.');
+    setPreviewError(null);
   };
 
   const handleRunInference = async () => {
+    if (customFile) {
+      setAnalysisStatus('ready');
+      setAnalysisMessage('This local image is ready for backend analysis. Detection, masks, and geographic results are unavailable until that workflow is connected.');
+      return;
+    }
+
     setIsProcessing(true);
-    setAnalysisStatus('idle');
+    setAnalysisStatus('processing');
     setAnalysisMessage(null);
 
     try {
-      if (customFile) {
-        await cvService.preprocess(customFile);
-        setAnalysisStatus('success');
-        setAnalysisMessage(
-          'Local preview prepared. Derived segmentation products require a backend upload in a later integration step.'
-        );
-        return;
-      }
-
       // Existing demo inference path for the bundled benchmark scenes.
       const res = await fetch('/api/satellite/analyze', {
         method: 'POST',
@@ -189,6 +212,30 @@ export const SatelliteAnalysisView: React.FC<SatelliteAnalysisViewProps> = ({
     }
   };
 
+  const handleViewerTabChange = (tab: ViewerTab) => {
+    setActiveViewerTab(tab);
+    setPreviewError(null);
+  };
+
+  const handleRetry = () => {
+    const isFileValidationError = analysisMessage?.includes('image file')
+      || analysisMessage?.includes('selected file is empty');
+
+    if (customFile || isFileValidationError) {
+      fileInputRef.current?.click();
+      return;
+    }
+
+    if (previewError) {
+      setPreviewError(null);
+      setAnalysisStatus('initial');
+      setAnalysisMessage(null);
+      return;
+    }
+
+    void handleRunInference();
+  };
+
   const handleSendToInvestigation = () => {
     onTransferToInvestigation({
       name: `${selectedScene.name} (Analyzed)`,
@@ -220,6 +267,29 @@ export const SatelliteAnalysisView: React.FC<SatelliteAnalysisViewProps> = ({
     }
   };
 
+  const activeDisplayImage = getActiveDisplayImage();
+  const isLocalUpload = Boolean(customFile);
+  const isDemoBenchmark = !isLocalUpload;
+  const referenceImageUrl: string | null = null;
+  const currentSarImageUrl = customFilePreview ?? cvResult.originalImageUrl ?? null;
+  const detectionImageUrl = !isLocalUpload ? cvResult.overlayImageUrl ?? null : null;
+  const hasDetection = !isLocalUpload && analysisStatus !== 'error' && cvResult.spillDetected === true;
+  const hasAffectedArea = hasDetection
+    && typeof cvResult.estimatedAreaKm2 === 'number'
+    && Number.isFinite(cvResult.estimatedAreaKm2);
+  const detectionLabel = analysisStatus === 'error'
+    ? 'Analysis failed'
+    : isLocalUpload
+      ? 'Analysis pending'
+      : hasDetection
+        ? 'Possible oil spill'
+        : 'Detection unavailable';
+  const actionLabel = isProcessing
+    ? 'ANALYZING SATELLITE IMAGE...'
+    : isLocalUpload
+      ? 'BACKEND ANALYSIS REQUIRED'
+      : 'RUN DEMO INFERENCE PIPELINE';
+
   return (
     <div className="w-full min-h-[calc(100vh-64px)] p-4 sm:p-6 lg:p-10 bg-[#0e1320] text-[#dee2f4] space-y-8">
       
@@ -241,11 +311,12 @@ export const SatelliteAnalysisView: React.FC<SatelliteAnalysisViewProps> = ({
         <div className="flex items-center gap-3">
           <button
             onClick={handleRunInference}
-            disabled={isProcessing}
+            disabled={isProcessing || isLocalUpload}
+            title={isLocalUpload ? 'Local uploads require the future backend analysis workflow.' : undefined}
             className="btn-primary px-4 py-2 rounded-lg text-xs font-mono-data font-bold flex items-center gap-2"
           >
             <Zap className={`w-4 h-4 ${isProcessing ? 'animate-spin' : ''}`} />
-            <span>{isProcessing ? 'INVERTING SAR BACKSCATTER...' : 'RUN CV INFERENCE PIPELINE'}</span>
+            <span>{actionLabel}</span>
           </button>
         </div>
       </div>
@@ -289,6 +360,93 @@ export const SatelliteAnalysisView: React.FC<SatelliteAnalysisViewProps> = ({
         </div>
       </div>
 
+      {/* High-level comparison summary. Reference imagery is intentionally unavailable until supplied by a scene or backend. */}
+      <section className="glass-panel-elevated rounded-xl p-5 border border-[#3a494b] space-y-4" aria-labelledby="before-after-heading">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 id="before-after-heading" className="text-xs font-mono-data text-[#00f2ff] uppercase tracking-widest font-bold">
+              Before / After Satellite Comparison
+            </h2>
+            <p className="text-xs text-[#849495] mt-1">
+              {isDemoBenchmark
+                ? 'Benchmark demo imagery and detection outputs'
+                : 'Local source preview — backend detection has not been run'}
+            </p>
+          </div>
+          <span className={`px-2 py-1 rounded border text-[10px] font-mono-data font-bold ${
+            isDemoBenchmark
+              ? 'border-[#00f2ff]/30 bg-[#00f2ff]/10 text-[#00f2ff]'
+              : 'border-amber-500/30 bg-amber-500/10 text-amber-300'
+          }`}>
+            {isDemoBenchmark ? 'DEMO / BENCHMARK' : 'LOCAL PREVIEW'}
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto_1fr] gap-4 items-stretch">
+          <article className="rounded-lg overflow-hidden border border-[#3a494b] bg-[#0e1320]">
+            <div className="px-3 py-2 border-b border-[#3a494b]">
+              <div className="text-[10px] font-mono-data font-bold text-[#849495] uppercase">Before / Reference</div>
+              <div className="text-xs text-[#b9cacb]">Previous/reference satellite image</div>
+            </div>
+            {referenceImageUrl ? (
+              <img src={referenceImageUrl} alt="Previous reference satellite image" className="w-full h-44 object-cover" referrerPolicy="no-referrer" />
+            ) : (
+              <div className="h-44 px-5 flex flex-col items-center justify-center text-center bg-[#070b14]">
+                <Satellite className="w-7 h-7 text-[#849495] mb-2" />
+                <p className="text-sm text-[#dee2f4]">Reference image unavailable</p>
+                <p className="text-[11px] font-mono-data text-[#849495] mt-1">No previous satellite image is available for this source.</p>
+              </div>
+            )}
+          </article>
+
+          <div className="flex lg:flex-col items-center justify-center gap-2 text-[#849495]" aria-hidden="true">
+            <span className="w-8 h-px lg:w-px lg:h-8 bg-[#3a494b]" />
+            <span className="text-xs font-mono-data font-bold">VS</span>
+            <span className="w-8 h-px lg:w-px lg:h-8 bg-[#3a494b]" />
+          </div>
+
+          <article className="rounded-lg overflow-hidden border border-[#00f2ff]/35 bg-[#0e1320]">
+            <div className="px-3 py-2 border-b border-[#3a494b]">
+              <div className="text-[10px] font-mono-data font-bold text-[#00f2ff] uppercase">After / Detection</div>
+              <div className="text-xs text-[#b9cacb]">Current SAR image and available detection result</div>
+            </div>
+            {currentSarImageUrl ? (
+              <div className="relative h-44">
+                <img
+                  src={detectionImageUrl ?? currentSarImageUrl}
+                  alt={hasDetection ? 'Current SAR image with available oil-spill detection overlay' : 'Current SAR image'}
+                  className="w-full h-full object-cover"
+                  referrerPolicy="no-referrer"
+                />
+                {hasDetection && detectionImageUrl && (
+                  <span className="absolute bottom-2 left-2 px-2 py-1 rounded bg-[#0e1320]/90 border border-[#00f2ff]/40 text-[10px] font-mono-data text-[#00f2ff]">
+                    DETECTION OVERLAY
+                  </span>
+                )}
+              </div>
+            ) : (
+              <div className="h-44 px-5 flex flex-col items-center justify-center text-center bg-[#070b14]">
+                <Satellite className="w-7 h-7 text-[#849495] mb-2" />
+                <p className="text-sm text-[#dee2f4]">Current SAR image unavailable</p>
+              </div>
+            )}
+          </article>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="rounded-lg border border-[#3a494b] bg-[#0e1320] px-3 py-2.5">
+            <div className="text-[10px] font-mono-data text-[#849495] uppercase">Detected Change</div>
+            <div className={`mt-1 text-sm font-bold ${hasDetection ? 'text-red-400' : 'text-[#b9cacb]'}`}>{detectionLabel}</div>
+          </div>
+          <div className="rounded-lg border border-[#3a494b] bg-[#0e1320] px-3 py-2.5">
+            <div className="text-[10px] font-mono-data text-[#849495] uppercase">Affected Area</div>
+            <div className="mt-1 text-sm font-bold text-[#dee2f4]">
+              {hasAffectedArea ? `${cvResult.estimatedAreaKm2} km²` : 'Unavailable'}
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* Main Analysis Workspace */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         
@@ -307,7 +465,7 @@ export const SatelliteAnalysisView: React.FC<SatelliteAnalysisViewProps> = ({
                 ].map((tab) => (
                   <button
                     key={tab.key}
-                    onClick={() => setActiveViewerTab(tab.key as any)}
+                    onClick={() => handleViewerTabChange(tab.key as ViewerTab)}
                     className={`px-3 py-1.5 rounded-md text-xs font-mono-data font-bold transition-all ${
                       activeViewerTab === tab.key
                         ? 'bg-[#00f2ff] text-[#002022] shadow-[0_0_12px_rgba(0,242,255,0.4)]'
@@ -323,7 +481,7 @@ export const SatelliteAnalysisView: React.FC<SatelliteAnalysisViewProps> = ({
               <label className="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#1a2336] text-[#00f2ff] border border-[#00f2ff]/40 hover:bg-[#00f2ff]/10 text-xs font-mono-data transition-all">
                 <Upload className="w-3.5 h-3.5" />
                 <span>Upload SAR (PNG/JPG/GeoTIFF)</span>
-                <input ref={fileInputRef} type="file" accept="image/*,.tif,.tiff" onChange={handleFileUpload} className="hidden" />
+                <input ref={fileInputRef} type="file" accept=".png,.jpg,.jpeg,.tif,.tiff,image/png,image/jpeg,image/tiff" onChange={handleFileUpload} className="hidden" />
               </label>
             </div>
 
@@ -332,7 +490,7 @@ export const SatelliteAnalysisView: React.FC<SatelliteAnalysisViewProps> = ({
                 <div className="min-w-0">
                   <span className="text-[#00f2ff] font-bold">LOCAL SOURCE:</span>{' '}
                   <span className="text-[#dee2f4] break-all">{customFile.name}</span>{' '}
-                  <span className="text-[#849495]">({Math.max(1, Math.round(customFile.size / 1024))} KB)</span>
+                  <span className="text-[#849495]">({formatFileSize(customFile.size)})</span>
                 </div>
                 <button
                   onClick={clearCustomFile}
@@ -343,27 +501,37 @@ export const SatelliteAnalysisView: React.FC<SatelliteAnalysisViewProps> = ({
               </div>
             )}
 
+            {!customFile && (
+              <div className="rounded-lg bg-[#0e1320] border border-[#3a494b] px-3 py-2 text-xs font-mono-data text-[#849495]">
+                No local SAR image selected. Upload a PNG, JPG, or GeoTIFF to preview its original image, or run the selected benchmark scene in demo mode.
+              </div>
+            )}
+
             {/* Image Canvas Display Area */}
             <div className="relative w-full h-[420px] rounded-lg overflow-hidden border border-[#3a494b] bg-[#070b14] flex items-center justify-center">
-              {getActiveDisplayImage() ? (
+              {activeDisplayImage && !previewError ? (
                 <img
-                  src={getActiveDisplayImage() ?? undefined}
+                  src={activeDisplayImage}
                   alt={customFile ? 'Local satellite image preview' : 'SAR analysis'}
                   className="w-full h-full object-cover"
                   referrerPolicy="no-referrer"
                   onError={() => {
-                    if (customFile) {
-                      setAnalysisStatus('error');
-                      setAnalysisMessage('This browser cannot preview the selected file. The file remains selected.');
-                    }
+                    const message = customFile
+                      ? 'This browser cannot preview the selected file. The file remains selected.'
+                      : 'The selected demo image could not be loaded. Select another benchmark scene or retry the demo analysis.';
+                    setPreviewError(message);
+                    setAnalysisStatus('error');
+                    setAnalysisMessage(message);
                   }}
                 />
               ) : (
                 <div className="max-w-md px-6 text-center space-y-2">
                   <Layers className="w-8 h-8 text-[#849495] mx-auto" />
-                  <p className="text-sm text-[#dee2f4]">Derived imagery is not available for a local file preview.</p>
+                  <p className="text-sm text-[#dee2f4]">{previewError ?? 'Derived imagery is not available for a local file preview.'}</p>
                   <p className="text-xs font-mono-data text-[#849495]">
-                    Select Original SAR to inspect the source image. A later backend integration will provide processed, mask, and overlay images.
+                    {previewError
+                      ? 'Select another source or retry the benchmark scene.'
+                      : 'Select Original SAR to inspect the source image. A later backend integration will provide processed, mask, and overlay images.'}
                   </p>
                 </div>
               )}
@@ -412,19 +580,25 @@ export const SatelliteAnalysisView: React.FC<SatelliteAnalysisViewProps> = ({
               <div className={`rounded-lg border px-3 py-2.5 text-xs font-mono-data flex flex-wrap items-center justify-between gap-3 ${
                 analysisStatus === 'error'
                   ? 'bg-red-950/30 border-red-500/40 text-red-200'
-                  : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-200'
+                  : analysisStatus === 'ready'
+                    ? 'bg-amber-500/10 border-amber-500/30 text-amber-100'
+                    : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-200'
               }`}>
                 <div className="flex items-center gap-2">
-                  {analysisStatus === 'error' ? <AlertTriangle className="w-4 h-4 text-red-400" /> : <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
+                  {analysisStatus === 'error'
+                    ? <AlertTriangle className="w-4 h-4 text-red-400" />
+                    : analysisStatus === 'ready'
+                      ? <Upload className="w-4 h-4 text-amber-300" />
+                      : <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
                   <span>{analysisMessage}</span>
                 </div>
                 {analysisStatus === 'error' && (
                   <button
-                    onClick={handleRunInference}
+                    onClick={handleRetry}
                     disabled={isProcessing}
                     className="px-2.5 py-1 rounded border border-red-400/50 text-red-100 hover:bg-red-500/20 disabled:opacity-50"
                   >
-                    Retry
+                    {customFile ? 'Choose another file' : 'Retry'}
                   </button>
                 )}
               </div>
