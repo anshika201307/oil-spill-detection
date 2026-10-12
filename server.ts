@@ -2,6 +2,9 @@ import express from 'express';
 import path from 'path';
 import { GoogleGenAI } from '@google/genai';
 import { createServer as createViteServer } from 'vite';
+import { initializeDatabase } from './src/config/initializeDatabase';
+import { pool } from './src/config/database';
+import { apiV1Router } from './src/routes/apiV1';
 
 let aiClient: GoogleGenAI | null = null;
 function getAI(): GoogleGenAI | null {
@@ -58,6 +61,18 @@ async function startServer() {
   const PORT = Number(process.env.OILTRACE_PORT || 3000);
 
   app.use(express.json({ limit: '20mb' }));
+  app.use('/api/v1', apiV1Router);
+
+  try {
+    await initializeDatabase();
+  } catch (error) {
+    const message = error instanceof Error && error.message.trim()
+      ? error.message
+      : 'Unable to connect; verify PostgreSQL is running and DB_HOST/DB_PORT are correct';
+    console.error('[Database] Schema initialization failed; server will not start:', message);
+    await pool.end();
+    throw error;
+  }
 
   const proxyPythonApi = (apiPath: string) => async (req: express.Request, res: express.Response) => {
     const controller = new AbortController();
@@ -408,4 +423,8 @@ Respond concisely (under 120 words), professionally in intelligence format. Reme
   });
 }
 
-startServer();
+startServer().catch((error: unknown) => {
+  const message = error instanceof Error && error.message ? error.message : 'Unknown startup error';
+  console.error('[Startup] OilTrace server failed to start:', message);
+  process.exitCode = 1;
+});
